@@ -30,6 +30,10 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     )
+
+    list_frames = []
+    skeleton_frames = []
+    frame_count = 0
     FPS_STANDARD = 12
 
 
@@ -38,21 +42,16 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
         REAL_frame_count = 0 # đây là số frame thực sự đọc được
         process_frame_count = 0 # đây là số frame thực sự được xử lí (không phải frame nào cũng được xử lí)
         error_frame_count = 0
-        list_frames = []
-        skeleton_frames = []
-        frame_count = 0
         
         while True:
             ret, frame = cap.read()
+            # cam_frame += 1
             REAL_frame_count += 1
             ##### 4. Xử lí trường hợp không đọc được frame
             if not ret:
                 error_frame_count += 1
-                # TODO: if there are more than 5 continuous error frames, reset variables and break
+                # TODO: if there are more than 10 continuous error frames, reset variables and break
                 if error_frame_count > 5:
-                    REAL_frame_count = 0
-                    process_frame_count = 0
-                    error_frame_count = 0
                     frame_count = 0
                     skeleton_frames.clear()
                     list_frames.clear()
@@ -63,12 +62,15 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
             
             # TODO: nếu frame không lỗi, reset giá trị error_frame_count
             error_frame_count = 0
+
+            # TODO: bỏ qua một số frame
             if(FPS > FPS_STANDARD):
-                if(math.floor(FPS_STANDARD/FPS*REAL_frame_count) <= process_frame_count):
+                if(math.floor(FPS_STANDARD/FPS*REAL_frame_count) == process_frame_count):
                     continue
             # TODO: Convert frame về dạng RGB chuẩn để xử lí
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = pose.process(rgb)
+
 
             ##### 5. Xử lí trường hợp không phát hiện landmarks trong frame
             if not result.pose_landmarks:
@@ -94,8 +96,7 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
             frame_count += 1
             process_frame_count += 1
             skeleton_frames.append(joints)
-            list_frames.append(frame) # thêm frame sau mỗi lần detect
-
+            # print("cam_frame: ", cam_frame)
 
             ##### 7. Xử lí trường hợp số lượng frame cho một lần detect đã đủ
             if frame_count >= 60 or frame_count >= MAX_FRAME:
@@ -109,10 +110,15 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                                                       list_skeleton=skeleton_frames,
                                                       created_at=datetime.now())
                 queue_out.put(tmp)
-
+                print(tmp)
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Ê sai ở đây nè mày ơi
                 del tmp
 
                 # TODO: set các giá trị về ban đầu
                 frame_count = 0
+                skeleton_frames.clear()
+                print("skeleton_frames: ", len(skeleton_frames))
+                list_frames.clear()
+                
+                print("Sent to queue")
                 break

@@ -5,6 +5,7 @@ from getmac import get_mac_address
 import cv2
 import json
 from enum import Enum
+import orjson
 
 ## FILE
 from detect_fall import detect_fall
@@ -13,7 +14,7 @@ from send_to_server import send_video
 from common import Event
 
 ############################# DEFINE ALL CONFIG
-POST_VIDEO_URL = ""
+POST_VIDEO_URL = "http://192.168.1.191:9001/api/v1/event/upload-video"
 
 # mqtt
 MQTT_BROKER = "broker.emqx.io"     # đổi nếu dùng broker khác
@@ -30,12 +31,13 @@ CAMERA_FALL_DETECTION_ACTIVE_LIST = []
 
 
 class Action(Enum):
-    START = "start"
-    ADD_CAMERA = "add_camera"
-    DELETE_CAMERA = "delete_camera"
-    RUN_FALL_DETECTION = "run_fall_detection"
-    STOP_FALL_DETECTION = "stop_fall_detection"
-    RESET = "reset"
+    START = "START"
+    ADD_CAMERA = "ADD_CAMERA"
+    DELETE_CAMERA = "DELETE_CAMERA"
+    RUN_FALL_DETECTION = "RUN_FALL_DETECTION"
+    STOP_FALL_DETECTION = "STOP_FALL_DETECTION"
+    RESET = "RESET"
+    SYNC = "SYNC"
 
 class ServerRequest: # REQUEST FROM SERVER
     def __init__(self, action, url):
@@ -43,14 +45,16 @@ class ServerRequest: # REQUEST FROM SERVER
         self.url = url
 
 class ServerResponse: # RESPONSE TO SERVER
-    def __init__(self, action, status, message):
+    def __init__(self, action: str, success: bool, url: str, message: str):
         self.mac_address = MAC_ADDRESS
         self.action = action
-        self.status = status
+        self.success = success
+        self.url = url
         self.message = message
 
 TOPIC_SUBSCRIBE = MAC_ADDRESS
 TOPIC_SEND_SERVER = "notify_server"
+TOPIC_SEND_FALL_EVENT = "notify_fall_event"
 ############################# DEFINE ALL CONFIG - END
 
 
@@ -73,7 +77,7 @@ TOPIC_SEND_SERVER = "notify_server"
 
 
 def handle_start(payload):
-    response = ServerResponse("start", "success", "Device is running")
+    response = ServerResponse(Action.START.value, True, "", "Device is running")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
 
 
@@ -82,14 +86,14 @@ def handle_add_camera(payload):
     camera_url = payload.get("url")
     # TODO: check xem có trong list chưa
     if camera_url in CAMERA_LIST:
-        response = ServerResponse("add_camera", "fail", "this camera exists already")
+        response = ServerResponse(Action.ADD_CAMERA.value, False, camera_url, "this camera exists already")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
 
     # TODO: check xem có mở được luồng camera hay không
     cap = cv2.VideoCapture(camera_url)
     if not cap.isOpened():
-        response = ServerResponse("add_camera", "fail", "cannot open this stream")
+        response = ServerResponse(Action.ADD_CAMERA.value, False, camera_url, "cannot open this stream")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         cap.release()
         return
@@ -100,7 +104,7 @@ def handle_add_camera(payload):
 
 
     # TODO: notify adding success
-    response = ServerResponse("add_camera", "success", "add camera successfully")
+    response = ServerResponse(Action.ADD_CAMERA.value, True, camera_url, "add camera successfully")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
     return 
 
@@ -109,7 +113,7 @@ def handle_delete_camera(payload):
     camera_url = payload.get("url")
     # TODO: check xem có trong list chưa
     if camera_url not in CAMERA_LIST:
-        response = ServerResponse("delete_camera", "fail", "this camera does not exist")
+        response = ServerResponse(Action.DELETE_CAMERA.value, False, camera_url, "this camera does not exist")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
     
@@ -122,7 +126,7 @@ def handle_delete_camera(payload):
     CAMERA_LIST.pop(camera_url)
 
     # TODO: notify deleting success
-    response = ServerResponse("delete_camera", "success", "delete camera successfully")
+    response = ServerResponse(Action.DELETE_CAMERA.value, True, camera_url, "delete camera successfully")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
     return 
 
@@ -131,20 +135,20 @@ def handle_run_fall_detection(payload):
     camera_url = payload.get("url")
     # TODO: check xem có trong list không
     if camera_url not in CAMERA_LIST:
-        response = ServerResponse("run_fall_detection", "fail", "this camera does not exist")
+        response = ServerResponse(Action.RUN_FALL_DETECTION.value, False, camera_url, "this camera does not exist")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
     
     # TODO: check xem trong list active đã có camera này chưa
     if camera_url in CAMERA_FALL_DETECTION_ACTIVE_LIST:
-        response = ServerResponse("run_fall_detection", "success", "this camera has been running fall detection already")
+        response = ServerResponse(Action.RUN_FALL_DETECTION.value, True, camera_url, "this camera has been running fall detection already")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
     
     # TODO: check xem có mở được luồng camera hay không
     cap = cv2.VideoCapture(camera_url)
     if not cap.isOpened():
-        response = ServerResponse("run_fall_detection", "fail", "cannot open this camera stream")
+        response = ServerResponse(Action.RUN_FALL_DETECTION.value, False, camera_url, "cannot open this camera stream")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         cap.release()
         return
@@ -161,7 +165,7 @@ def handle_run_fall_detection(payload):
     CAMERA_FALL_DETECTION_ACTIVE_LIST.append(camera_url)
 
     # TODO: notify running fall detection success
-    response = ServerResponse("run_fall_detection", "success", "run fall detection for camera successfully")
+    response = ServerResponse(Action.RUN_FALL_DETECTION.value, True, camera_url, "run fall detection for camera successfully")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
     return 
 
@@ -170,13 +174,13 @@ def handle_stop_fall_detection(payload):
     camera_url = payload.get("url")
     # TODO: check xem có trong list không
     if camera_url not in CAMERA_LIST:
-        response = ServerResponse("stop_fall_detection", "fail", "this camera does not exist")
+        response = ServerResponse(Action.STOP_FALL_DETECTION.value, False, camera_url, "this camera does not exist")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
     
     # TODO: check xem camera có đang được chạy fall detection hay không
     if camera_url not in CAMERA_FALL_DETECTION_ACTIVE_LIST:
-        response = ServerResponse("stop_fall_detection", "fail", "this camera is not running fall detection")
+        response = ServerResponse(Action.STOP_FALL_DETECTION.value, False, camera_url, "this camera is not running fall detection")
         client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
         return
 
@@ -185,7 +189,7 @@ def handle_stop_fall_detection(payload):
     CAMERA_LIST[camera_url].set()
 
     # TODO: notify stopping fall detection for camera successfully
-    response = ServerResponse("stop_fall_detection", "success", "stop fall detection for camera successfully")
+    response = ServerResponse(Action.STOP_FALL_DETECTION.value, True, camera_url, "stop fall detection for camera successfully")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
     return 
 
@@ -199,7 +203,7 @@ def handle_reset(payload):
     CAMERA_LIST.clear()
 
     # TODO: notify server
-    response = ServerResponse("reset", "success", "reset camera sucessfully")
+    response = ServerResponse(Action.RESET.value, True, "", "reset camera sucessfully")
     client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(response.__dict__), qos=MQTT_QOS)
     return 
 
@@ -216,31 +220,19 @@ action_handlers = {
 
 # Callback - successful connection
 def on_connect(client, userdata, flags, rc, properties):
-    print("Connected with result code", rc)
+    print("MQTT Connected with result code: ", rc)
     subscribe_topic = f"{MAC_ADDRESS}"
     client.subscribe(subscribe_topic)
 
 # Callback - receiving message
 def on_message(client, userdata, msg):
-    # print(f"Topic: {msg.topic}, Payload: {msg.payload.decode()}")
     payload = msg.payload.decode()
-    # print("payload: ", payload)
     newpayload = json.loads(payload)
-
-    # print("action: ", payload["action"])
-    # print("url: ", payload["url"])
-    # print("Action.START: ", Action.START.value)
 
     handler = action_handlers.get(newpayload["action"])
     print("handler: ", handler)
     if handler:
         handler(payload)
-
-class Notification:
-    def __init__(self, action, camera_url, time):
-        self.action = action
-        self.camera_url = camera_url
-        self.time = time
 
 def notify_event(queue_in: mp.Queue):
     client = mqtt.Client()
@@ -249,8 +241,8 @@ def notify_event(queue_in: mp.Queue):
 
     while True:
         item: Event = queue_in.get()
-        noti = Notification("notify", item.camera_url, item.created_at)
-        client.publish(topic=TOPIC_SEND_SERVER, payload=json.dumps(noti.__dict__), qos=MQTT_QOS)
+        item.mac_address = MAC_ADDRESS
+        client.publish(topic=TOPIC_SEND_FALL_EVENT, payload=orjson.dumps(item.__dict__), qos=MQTT_QOS)
 
 
 ############################# HANDLE SIGNAL - END

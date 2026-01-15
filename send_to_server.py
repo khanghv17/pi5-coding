@@ -5,6 +5,8 @@ import requests
 import os
 import paho.mqtt.client as mqtt
 from common import Event
+import orjson
+import numpy as np
 
 def send_video(mac_address: str, url: str, queue_in: multiprocessing.Queue):
 
@@ -12,23 +14,29 @@ def send_video(mac_address: str, url: str, queue_in: multiprocessing.Queue):
     while True:
         # TODO: write_video 
         item : Video = queue_in.get()
-        frame_height, frame_width = item.list_frame[0].shape[0], item.list_frame[0].shape[1]
+        tmp = item.list_frame[0]
+        frame_height, frame_width = tmp.shape[0], tmp.shape[1]
+        os.makedirs("video", exist_ok=True)
         video_path = f"video/video_{i}.mp4"
-        output = cv2.VideoWriter(video_path, "H264", fps=15, frameSize=(frame_height, frame_width))
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+        # fourcc = cv2.VideoWriter_fourcc(*'XVID') 
+
+        output = cv2.VideoWriter(filename=video_path, fourcc=fourcc, fps=12, frameSize=(frame_width, frame_height))
         for frame in item.list_frame:
             output.write(frame)
+        output.release()
 
         # TODO: send video
-        data = {
-            "mac_address": "",
-            "time" : item.created_at,
-            "file": open(video_path, "rb")
-        }
         with open(video_path, "rb") as f: # tự động đóng file với with
             files = {
-                "file": (video_path, f, "video/mp4")
+                "file": (f"video_{i}.mp4", f, "video/mp4")
                 }
-            response = requests.post(url, files=files)
+            data = {
+                "mac_address": mac_address,
+                "camera_url": item.camera_url,
+                "created_at": item.created_at.isoformat()
+            }
+            response = requests.post(url, files=files, data=data)
             if not (response.status_code == 200 or response.status_code == 201):
                 print("Cannot send video")
 

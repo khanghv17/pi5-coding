@@ -339,7 +339,7 @@ class Model(nn.Module):
         else:
             self.graph = Graph()
 
-        A = self.graph.A # 3,25,25
+        A = self.graph.A # 3,33,33
 
         self.num_class = num_class
         self.num_point = num_point
@@ -366,11 +366,17 @@ class Model(nn.Module):
             self.drop_out = lambda x: x
 
     def forward(self, x):
-        N, C, T, V, M = x.size()
+        # if len(x.shape) == 3:
+        #     N, T, VC = x.shape
+        #     x = x.view(N, T, self.num_point, -1).permute(0, 3, 1, 2).contiguous().unsqueeze(-1)
+        # N, C, T, V, M = x.size()
+        N, C, T, V = x.size()
 
-        x = x.permute(0, 4, 3, 1, 2).contiguous().view(N, M * V * C, T)
+        # x = x.permute(0, 4, 3, 1, 2).contiguous().view(N, M * V * C, T)
+        x = x.permute(0, 3, 1, 2).contiguous().view(N, V * C, T)
         x = self.data_bn(x)
-        x = x.view(N, M, V, C, T).permute(0, 1, 3, 4, 2).contiguous().view(N * M, C, T, V)
+        # x = x.view(N, M, V, C, T).permute(0, 1, 3, 4, 2).contiguous().view(N * M, C, T, V)
+        x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous().view(N, C, T, V)
         x = self.l1(x)
         x = self.l2(x)
         x = self.l3(x)
@@ -382,10 +388,18 @@ class Model(nn.Module):
         x = self.l9(x)
         x = self.l10(x)
 
-        # N*M,C,T,V
+        # # N*M,C,T,V
+        # c_new = x.size(1)
+        # x = x.view(N, M, c_new, -1)
+        # x = x.mean(3).mean(1)
+        # x = self.drop_out(x)
+
+        # N,C,T,V
         c_new = x.size(1)
-        x = x.view(N, M, c_new, -1)
-        x = x.mean(3).mean(1)
+        # x = x.view(N, M, c_new, -1)
+        # x = x.mean(3).mean(1)
+        x = x.view(N, c_new, -1)
+        x = x.mean(2)
         x = self.drop_out(x)
 
         return self.fc(x)

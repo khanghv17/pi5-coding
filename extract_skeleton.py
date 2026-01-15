@@ -10,7 +10,10 @@ import math
 def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Queue):
 
     ##### 1. Mở camera xem có đọc được luồng không, nếu không thì return luôn
-    cap = cv2.VideoCapture(camera_url)
+    # cap = cv2.VideoCapture(camera_url)
+    cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 10) # giữ lại 10 frame mới nhất
+
     if not cap.isOpened():
         print("Cannot open camera stream")
         return
@@ -38,6 +41,7 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
         REAL_frame_count = 0 # đây là số frame thực sự đọc được
         process_frame_count = 0 # đây là số frame thực sự được xử lí (không phải frame nào cũng được xử lí)
         error_frame_count = 0
+        no_human_frame_count = 0
         list_frames = []
         skeleton_frames = []
         frame_count = 0
@@ -50,12 +54,6 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                 error_frame_count += 1
                 # TODO: if there are more than 5 continuous error frames, reset variables and break
                 if error_frame_count > 5:
-                    REAL_frame_count = 0
-                    process_frame_count = 0
-                    error_frame_count = 0
-                    frame_count = 0
-                    skeleton_frames.clear()
-                    list_frames.clear()
                     print("Cannot read the camera stream")
                     time.sleep(10)
                     break
@@ -72,10 +70,11 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
 
             ##### 5. Xử lí trường hợp không phát hiện landmarks trong frame
             if not result.pose_landmarks:
-                error_frame_count += 1
-                # TODO: if there are more than 5 continuous without detection, reset variables and break
-                if error_frame_count > 5:
+                no_human_frame_count += 1
+                # TODO: if there are more than 10 continuous without detection, reset variables and break
+                if no_human_frame_count > 10:
                     frame_count = 0
+                    no_human_frame_count = 0
                     skeleton_frames.clear()
                     list_frames.clear()
                     time.sleep(1)
@@ -83,8 +82,8 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                     break
                 continue # dòng này rất quan trọng
             
-            # TODO: nếu frame không lỗi, reset giá trị error_frame_count
-            error_frame_count = 0
+            # TODO: nếu frame không lỗi, reset giá trị no_human_frame_count
+            no_human_frame_count = 0
 
             ##### 6. Lưu lại các landmarks trong frame
             joints = []
@@ -94,8 +93,9 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
             frame_count += 1
             process_frame_count += 1
             skeleton_frames.append(joints)
-            list_frames.append(frame) # thêm frame sau mỗi lần detect
+            list_frames.append(frame.copy()) # thêm frame sau mỗi lần detect
 
+            del result
 
             ##### 7. Xử lí trường hợp số lượng frame cho một lần detect đã đủ
             if frame_count >= 60 or frame_count >= MAX_FRAME:
@@ -111,9 +111,6 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                 print("Human detected! Put to queue for fall detection")
                 queue_out.put(tmp)
 
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Ê sai ở đây nè mày ơi
-                del tmp
-
-                # TODO: set các giá trị về ban đầu
-                frame_count = 0
                 break
+    cap.release()
+    pose.close()

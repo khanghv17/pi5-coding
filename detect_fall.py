@@ -36,6 +36,7 @@ def detect_fall(queue_in: multiprocessing.Queue, queue_out_video: multiprocessin
             result = output.argmax(dim=1)
             # TODO: if no falling -> ignore
             if result == 0:
+                print("Not a fall event")
                 continue
             
             # TODO: if falling -> put event to queue

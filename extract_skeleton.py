@@ -108,6 +108,7 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                                                       list_frame=list_frames,
                                                       list_skeleton=skeleton_frames,
                                                       created_at=datetime.now())
+                print("Human detected! Put to queue for fall detection")
                 queue_out.put(tmp)
 
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Ê sai ở đây nè mày ơi

@@ -30,7 +30,7 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
 
     pose = mp_pose.Pose(
         model_complexity=1,        # 0 = fast, 1 = balanced, 2 = accurate (chậm hơn)
-        min_detection_confidence=0.5,
+        min_detection_confidence=0.7,
         min_tracking_confidence=0.5
     )
     FPS_STANDARD = 12
@@ -77,8 +77,8 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                     no_human_frame_count = 0
                     skeleton_frames.clear()
                     list_frames.clear()
-                    time.sleep(1)
-                    print("break because there is no person")
+                    # time.sleep(1)
+                    # print("break because there is no person")
                     break
                 continue # dòng này rất quan trọng
             

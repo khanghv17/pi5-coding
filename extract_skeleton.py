@@ -78,7 +78,7 @@ def extract_skeleton(stop_event, camera_url: str, queue_out: multiprocessing.Que
                     skeleton_frames.clear()
                     list_frames.clear()
                     time.sleep(1)
-                    print("break because there is no person")
+                    # print("break because there is no person")
                     break
                 continue # dòng này rất quan trọng
             
